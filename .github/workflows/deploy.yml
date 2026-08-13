@@ -18,7 +18,7 @@ jobs:
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Install Dependencies
         run: |
@@ -34,6 +34,4 @@ jobs:
           docker build -t job-tracker-backend:latest .
 
       - name: Trigger Web & Celery Production Deployment
-        if: success() && secrets.RENDER_DEPLOY_HOOK_URL != ''
-        run: |
-          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+        run: curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
