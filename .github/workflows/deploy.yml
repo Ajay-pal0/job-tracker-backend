@@ -26,12 +26,22 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run Backend Unit Tests
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
         run: |
           python manage.py test applications
 
-      - name: Build Docker Image (Web & Celery Worker Container Check)
+      - name: Build Docker Image
         run: |
           docker build -t job-tracker-backend:latest .
+
+      - name: Run Production Migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+        run: |
+          python manage.py migrate
 
       - name: Trigger Web & Celery Production Deployment
         run: |
