@@ -1,4 +1,5 @@
 import os
+import ssl
 from pathlib import Path
 from datetime import timedelta
 import dj_database_url
@@ -161,8 +162,25 @@ GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
 GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET', '')
 
 # Celery & Redis Configuration
-CELERY_BROKER_URL = os.getenv('REDIS_URL', os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0'))
-CELERY_RESULT_BACKEND = os.getenv('REDIS_URL', os.getenv('CELERY_RESULT_BACKEND', 'redis://redis:6379/0'))
+# Celery & Redis Configuration
+CELERY_BROKER_URL = os.getenv(
+    'REDIS_URL',
+    os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0')
+)
+
+CELERY_RESULT_BACKEND = os.getenv(
+    'REDIS_URL',
+    os.getenv('CELERY_RESULT_BACKEND', 'redis://redis:6379/0')
+)
+
+CELERY_BROKER_USE_SSL = {
+    'ssl_cert_reqs': ssl.CERT_REQUIRED,
+}
+
+CELERY_REDIS_BACKEND_USE_SSL = {
+    'ssl_cert_reqs': ssl.CERT_REQUIRED,
+}
+
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
