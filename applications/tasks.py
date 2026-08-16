@@ -12,7 +12,7 @@ from applications.models import GmailConnection
 from applications.services.gmail_service import GmailService
 
 @shared_task
-def sync_gmail_jobs_task(user_id: int):
+def sync_gmail_jobs_task(user_id: int, mock_emails=None):
     """
     Background task to sync Gmail messages asynchronously for a user.
     """
@@ -20,10 +20,31 @@ def sync_gmail_jobs_task(user_id: int):
         user = User.objects.get(id=user_id)
         connection = GmailConnection.objects.get(user=user, is_active=True)
         service = GmailService(connection)
-        results = service.sync_user_applications()
+        results = service.sync_user_applications(emails_data=mock_emails)
         return results
     except Exception as e:
         return {"error": str(e)}
+
+@shared_task
+def sync_all_users_gmail_jobs_task():
+    """
+    Periodic task to sync Gmail messages for all active Gmail connections (runs every 24 hours).
+    """
+    active_connections = GmailConnection.objects.filter(is_active=True)
+    synced_users_count = 0
+    for connection in active_connections:
+        try:
+            sync_gmail_jobs_task.delay(connection.user.id)
+            synced_users_count += 1
+        except Exception as e:
+            # Fallback to direct synchronous execution if Celery delay fails
+            try:
+                service = GmailService(connection)
+                service.sync_user_applications()
+                synced_users_count += 1
+            except Exception:
+                pass
+    return {"synced_users_count": synced_users_count}
 
 @shared_task
 def renew_gmail_watches_task():

@@ -425,13 +425,36 @@ class GmailSyncView(APIView):
                 email_address=request.user.email or 'user@example.com'
             )
 
-        service = GmailService(credential)
-        sync_results = service.sync_user_applications(emails_data=mock_emails)
+        from applications.tasks import sync_gmail_jobs_task
 
-        return Response({
-            'message': f"Gmail sync complete. Created: {sync_results['created_count']}, Updated: {sync_results['updated_count']}, Scanned: {sync_results['scanned_emails_count']}.",
-            'details': sync_results
-        }, status=status.HTTP_200_OK)
+        try:
+            # Offload sync task to Celery worker queue
+            task = sync_gmail_jobs_task.delay(request.user.id, mock_emails=mock_emails)
+            
+            # If Celery is running in eager/synchronous mode (e.g. testing), extract result directly
+            if hasattr(task, 'result') and isinstance(task.result, dict) and 'scanned_emails_count' in task.result:
+                sync_results = task.result
+                return Response({
+                    'message': f"Gmail sync complete. Created: {sync_results['created_count']}, Updated: {sync_results['updated_count']}, Scanned: {sync_results['scanned_emails_count']}.",
+                    'task_id': getattr(task, 'id', None),
+                    'details': sync_results
+                }, status=status.HTTP_200_OK)
+
+            # Asynchronous response for active Celery worker
+            return Response({
+                'message': 'Gmail sync task offloaded to Celery background worker.',
+                'task_id': getattr(task, 'id', None),
+                'status': 'QUEUED'
+            }, status=status.HTTP_202_ACCEPTED)
+
+        except Exception:
+            # Fallback to direct execution if Celery broker/worker is unavailable
+            service = GmailService(credential)
+            sync_results = service.sync_user_applications(emails_data=mock_emails)
+            return Response({
+                'message': f"Gmail sync complete. Created: {sync_results['created_count']}, Updated: {sync_results['updated_count']}, Scanned: {sync_results['scanned_emails_count']}.",
+                'details': sync_results
+            }, status=status.HTTP_200_OK)
 
 
 class GmailDisconnectView(APIView):

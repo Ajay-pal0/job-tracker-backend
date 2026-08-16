@@ -186,4 +186,16 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 
+# Celery Beat Schedule (Runs background sync every 24 hours)
+CELERY_BEAT_SCHEDULE = {
+    'sync-all-users-gmail-every-24-hours': {
+        'task': 'applications.tasks.sync_all_users_gmail_jobs_task',
+        'schedule': timedelta(hours=24),
+    },
+    'renew-gmail-watches-every-24-hours': {
+        'task': 'applications.tasks.renew_gmail_watches_task',
+        'schedule': timedelta(hours=24),
+    },
+}
+
 
