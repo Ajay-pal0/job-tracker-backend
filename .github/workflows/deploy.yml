@@ -112,26 +112,3 @@ jobs:
       - name: Trigger Render Deployment
         run: |
           curl --fail --request POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
-
-  deploy-celery:
-    name: Deploy Celery to Oracle VM
-    runs-on: ubuntu-latest
-    needs:
-      - test
-      - migrate
-
-    steps:
-      - name: Deploy Celery Worker
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.ORACLE_HOST }}
-          username: ${{ secrets.ORACLE_USER }}
-          key: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
-          script: |
-            cd /home/ubuntu/job-tracker-backend
-            git fetch origin main
-            git reset --hard origin/main
-            source venv/bin/activate
-            pip install --only-binary=:all: -r requirements.txt
-            sudo systemctl restart job-tracker-celery
-            sudo systemctl is-active --quiet job-tracker-celery
