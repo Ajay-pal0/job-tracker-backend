@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-class AccountsTests(APITestCase):
+class AccountsAuthenticationTests(APITestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(

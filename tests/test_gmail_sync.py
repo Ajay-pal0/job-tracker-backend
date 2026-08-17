@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 from rest_framework import status
 from applications.models import Application, ApplicationStatus, EmailMessage, ApplicationEvent
 
-class GmailTrackerTests(TestCase):
+class GmailSyncTrackerTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.user = User.objects.create_user(
