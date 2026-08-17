@@ -1,0 +1,48 @@
+name: Periodic Gmail Application Synchronization
+
+on:
+  schedule:
+    # Runs every 15 minutes (or adjust to '0 */1 * * *' for hourly / '0 0 * * *' for daily)
+    - cron: '*/15 * * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+jobs:
+  sync-gmail-job-applications:
+    name: Sync Gmail Applications Across Users
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger Internal API Sync Endpoint
+        if: ${{ secrets.BACKEND_URL != '' }}
+        run: |
+          echo "Triggering Gmail sync via Internal API endpoint..."
+          curl -X POST "${{ secrets.BACKEND_URL }}/api/applications/gmail/cron-sync/" \
+            -H "Content-Type: application/json" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
+            --fail --show-error --silent | jq .
+
+      - name: Fallback Direct Management Command
+        if: ${{ secrets.BACKEND_URL == '' }}
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        if: ${{ secrets.BACKEND_URL == '' }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        if: ${{ secrets.BACKEND_URL == '' }}
+        run: |
+          pip install -r requirements.txt
+
+      - name: Execute Django Management Command
+        if: ${{ secrets.BACKEND_URL == '' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+        run: |
+          python manage.py sync_gmail

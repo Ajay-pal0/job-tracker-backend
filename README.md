@@ -46,8 +46,21 @@ python manage.py migrate
 python manage.py runserver 8000
 ```
 
-### Celery Worker & Celery Beat (Background Sync)
-To process asynchronous Gmail sync tasks and 24-hour scheduled background syncs:
+### Celery-Free Background Sync Architecture (Recommended)
+You can run periodic Gmail application synchronization without Redis or Celery using the built-in management command or GitHub Actions:
+
+```bash
+# Execute batch Gmail sync across all active users with cache locking
+python manage.py sync_gmail
+```
+
+#### GitHub Actions Workflow (.github/workflows/scheduled-gmail-sync.yml)
+Runs automatically on a configurable schedule (every 15 mins / hourly) or via manual trigger (`workflow_dispatch`). Can trigger the `POST /api/applications/gmail/cron-sync/` endpoint or execute `python manage.py sync_gmail` directly.
+
+---
+
+### Alternative: Celery Worker & Celery Beat (Optional)
+If running Redis & Celery in production:
 
 ```bash
 # Start Redis (if not running)

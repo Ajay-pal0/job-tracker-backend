@@ -408,6 +408,8 @@ class GmailStatusView(APIView):
             }, status=status.HTTP_200_OK)
 
 
+from .services.sync_service import sync_all_gmail_applications
+
 class GmailSyncView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -425,36 +427,31 @@ class GmailSyncView(APIView):
                 email_address=request.user.email or 'user@example.com'
             )
 
-        from applications.tasks import sync_gmail_jobs_task
+        service = GmailService(credential)
+        sync_results = service.sync_user_applications(emails_data=mock_emails)
 
-        try:
-            # Offload sync task to Celery worker queue
-            task = sync_gmail_jobs_task.delay(request.user.id, mock_emails=mock_emails)
-            
-            # If Celery is running in eager/synchronous mode (e.g. testing), extract result directly
-            if hasattr(task, 'result') and isinstance(task.result, dict) and 'scanned_emails_count' in task.result:
-                sync_results = task.result
-                return Response({
-                    'message': f"Gmail sync complete. Created: {sync_results['created_count']}, Updated: {sync_results['updated_count']}, Scanned: {sync_results['scanned_emails_count']}.",
-                    'task_id': getattr(task, 'id', None),
-                    'details': sync_results
-                }, status=status.HTTP_200_OK)
+        return Response({
+            'message': f"Gmail sync complete. Created: {sync_results['created_count']}, Updated: {sync_results['updated_count']}, Scanned: {sync_results['scanned_emails_count']}.",
+            'details': sync_results
+        }, status=status.HTTP_200_OK)
 
-            # Asynchronous response for active Celery worker
-            return Response({
-                'message': 'Gmail sync task offloaded to Celery background worker.',
-                'task_id': getattr(task, 'id', None),
-                'status': 'QUEUED'
-            }, status=status.HTTP_202_ACCEPTED)
 
-        except Exception:
-            # Fallback to direct execution if Celery broker/worker is unavailable
-            service = GmailService(credential)
-            sync_results = service.sync_user_applications(emails_data=mock_emails)
-            return Response({
-                'message': f"Gmail sync complete. Created: {sync_results['created_count']}, Updated: {sync_results['updated_count']}, Scanned: {sync_results['scanned_emails_count']}.",
-                'details': sync_results
-            }, status=status.HTTP_200_OK)
+class GmailInternalCronSyncView(APIView):
+    """
+    Internal endpoint to trigger batch Gmail synchronization across all users.
+    Secured via CRON_SECRET header or query param. Can be invoked by GitHub Actions or cron.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        expected_secret = getattr(settings, 'CRON_SECRET', 'default-jobtracker-cron-secret-123')
+        provided_secret = request.headers.get('X-Cron-Secret') or request.query_params.get('secret')
+
+        if not provided_secret or provided_secret != expected_secret:
+            return Response({'error': 'Unauthorized: Invalid cron secret.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        result = sync_all_gmail_applications()
+        return Response(result, status=status.HTTP_200_OK)
 
 
 class GmailDisconnectView(APIView):

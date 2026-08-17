@@ -14,7 +14,25 @@ from applications.services.gmail_service import GmailService
 @shared_task
 def sync_gmail_jobs_task(user_id: int, mock_emails=None):
     """
-    Background task to sync Gmail messages asynchronously for a user.
+    Syncs job application emails from Gmail for a specific user.
+
+    This is a background task that:
+    1. Fetches active Gmail connection for the user.
+    2. Scans for new application-related emails since last sync.
+    3. Extracts structured job data (company, title, location, apply date, etc.).
+    4. Saves new applications to the database and updates existing ones.
+
+    Args:
+        user_id: The ID of the user whose Gmail to sync
+        mock_emails: Optional list of mock email data for testing (bypasses actual Gmail API)
+
+    Returns:
+        A dictionary with:
+        - total_scanned: Number of emails scanned
+        - applications_created: Number of new applications created
+        - applications_updated: Number of existing applications updated
+        - status: 'success' or 'error'
+        - error: Error message if something went wrong
     """
     try:
         user = User.objects.get(id=user_id)
@@ -28,23 +46,11 @@ def sync_gmail_jobs_task(user_id: int, mock_emails=None):
 @shared_task
 def sync_all_users_gmail_jobs_task():
     """
-    Periodic task to sync Gmail messages for all active Gmail connections (runs every 24 hours).
+    Syncs Gmail applications for all active users with Gmail connections.
+    Delegates to sync_all_gmail_applications in sync_service.py.
     """
-    active_connections = GmailConnection.objects.filter(is_active=True)
-    synced_users_count = 0
-    for connection in active_connections:
-        try:
-            sync_gmail_jobs_task.delay(connection.user.id)
-            synced_users_count += 1
-        except Exception as e:
-            # Fallback to direct synchronous execution if Celery delay fails
-            try:
-                service = GmailService(connection)
-                service.sync_user_applications()
-                synced_users_count += 1
-            except Exception:
-                pass
-    return {"synced_users_count": synced_users_count}
+    from applications.services.sync_service import sync_all_gmail_applications
+    return sync_all_gmail_applications()
 
 @shared_task
 def renew_gmail_watches_task():
