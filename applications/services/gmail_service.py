@@ -50,7 +50,7 @@ class GmailService:
                 pass
         return self.credential.access_token
 
-    def fetch_job_emails(self, max_results: int = 50, query: str = None) -> List[Dict[str, Any]]:
+    def fetch_job_emails(self, max_results: int = 20, query: str = None) -> List[Dict[str, Any]]:
         access_token = self.get_valid_access_token()
         headers = {'Authorization': f'Bearer {access_token}'}
 
@@ -62,7 +62,7 @@ class GmailService:
         }
 
         try:
-            resp = requests.get(list_url, headers=headers, params=params, timeout=15)
+            resp = requests.get(list_url, headers=headers, params=params, timeout=10)
             if resp.status_code != 200:
                 print(f"Gmail API list messages error ({resp.status_code}): {resp.text}")
                 return []
@@ -72,16 +72,37 @@ class GmailService:
             # Fallback search if targeted search returns no messages
             if not message_list and not query:
                 fb_params = {'maxResults': max_results}
-                fb_resp = requests.get(list_url, headers=headers, params=fb_params, timeout=15)
+                fb_resp = requests.get(list_url, headers=headers, params=fb_params, timeout=10)
                 if fb_resp.status_code == 200:
                     message_list = fb_resp.json().get('messages', [])
 
+            if not message_list:
+                return []
+
+            # Deduplicate against database before making HTTP requests for message details
+            existing_ids = set(
+                EmailMessage.objects.filter(
+                    user=self.credential.user,
+                    gmail_message_id__in=[item.get('id') for item in message_list if item.get('id')]
+                ).values_list('gmail_message_id', flat=True)
+            )
+
+            new_items = [item for item in message_list if item.get('id') and item.get('id') not in existing_ids]
+
             fetched_emails = []
-            for item in message_list:
+
+            # Parallelize detail fetching using ThreadPoolExecutor for fast execution (<2s)
+            from concurrent.futures import ThreadPoolExecutor
+
+            def fetch_single(item):
                 msg_id = item.get('id')
-                msg_detail = self.get_message_detail(msg_id, headers)
-                if msg_detail:
-                    fetched_emails.append(msg_detail)
+                return self.get_message_detail(msg_id, headers)
+
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                results = executor.map(fetch_single, new_items)
+                for res in results:
+                    if res:
+                        fetched_emails.append(res)
 
             return fetched_emails
         except Exception as e:
