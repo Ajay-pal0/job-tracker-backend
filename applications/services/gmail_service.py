@@ -184,104 +184,110 @@ class GmailService:
         Stages raw email payload into EmailMessage table, executes job classification & extraction,
         populates extracted preview fields, and stages emails for manual user review.
         """
-        if emails_data is None:
-            emails_data = self.fetch_job_emails()
-
-        user = self.credential.user
-        created_count = 0
-        updated_count = 0
-        skipped_count = 0
-        pending_review_count = 0
-        processed_emails = []
-
-        for msg in emails_data:
-            msg_id = msg.get('id', '')
-            thread_id = msg.get('thread_id') or msg.get('threadId', '')
-            sender_raw = msg.get('from', '')
-            sender_name, sender_email = parseaddr(sender_raw)
-            subject = msg.get('subject', '')
-            body_text = msg.get('body', '')
-            snippet = msg.get('snippet', '')
-            raw_date = msg.get('date', '')
-            parsed_date = EmailJobParser.parse_datetime(raw_date) if raw_date else timezone.now()
-
-            # 1. Stage raw message in EmailMessage table
-            email_msg, _ = EmailMessage.objects.get_or_create(
-                user=user,
-                gmail_message_id=msg_id,
-                defaults={
-                    'gmail_thread_id': thread_id,
-                    'sender_name': sender_name,
-                    'sender_email': sender_email,
-                    'subject': subject,
-                    'received_at': parsed_date,
-                    'body_text': body_text,
-                    'snippet': snippet,
-                    'processing_status': EmailProcessingStatus.PROCESSING
-                }
-            )
-
-            # 2. Extract structured job attributes
-            extracted = JobExtractor.extract_from_message(email_msg)
-            if not extracted:
-                email_msg.is_job_related = False
-                email_msg.processing_status = EmailProcessingStatus.IGNORED
-                email_msg.processed_at = timezone.now()
-                email_msg.save()
-                skipped_count += 1
-                continue
-
-            email_msg.is_job_related = True
-            email_msg.extracted_company_name = extracted.get('company_name', 'Unknown Company')
-            email_msg.extracted_job_title = extracted.get('job_title', 'Software Engineer')
-            email_msg.extracted_status = extracted.get('status', 'Applied')
-            email_msg.extracted_platform = extracted.get('platform', 'Other')
-            email_msg.extracted_recruiter_name = extracted.get('recruiter_name', '')
-            email_msg.extracted_recruiter_email = extracted.get('recruiter_email', sender_email)
-            email_msg.confidence_score = extracted.get('confidence', 0.95)
-
-            if auto_approve:
-                # 3. Application deduplication and status mapping
-                app_record, is_created = ApplicationService.process_extracted_job_email(user, email_msg, extracted)
-
-                email_msg.processing_status = EmailProcessingStatus.PROCESSED
-                email_msg.processed_at = timezone.now()
-                email_msg.save()
-
-                if is_created:
-                    created_count += 1
-                else:
-                    updated_count += 1
-
-                processed_emails.append({
-                    'id': msg_id,
-                    'company_name': app_record.company_name,
-                    'job_title': app_record.job_title,
-                    'status': app_record.status,
-                    'action': 'created' if is_created else 'updated'
-                })
-            else:
-                email_msg.processing_status = EmailProcessingStatus.PENDING_REVIEW
-                email_msg.save()
-                pending_review_count += 1
-
-                processed_emails.append({
-                    'id': msg_id,
-                    'company_name': email_msg.extracted_company_name,
-                    'job_title': email_msg.extracted_job_title,
-                    'status': email_msg.extracted_status,
-                    'action': 'pending_review'
-                })
-
-        self.credential.last_synced_at = timezone.now()
+        self.credential.sync_status = 'IN_PROGRESS'
+        self.credential.sync_started_at = timezone.now()
         self.credential.save()
 
-        return {
-            'scanned_emails_count': len(emails_data),
-            'staged_emails_count': EmailMessage.objects.filter(user=user).count(),
-            'created_count': created_count,
-            'updated_count': updated_count,
-            'pending_review_count': pending_review_count,
-            'skipped_count': skipped_count,
-            'processed_applications': processed_emails
-        }
+        try:
+            if emails_data is None:
+                emails_data = self.fetch_job_emails()
+
+            user = self.credential.user
+            created_count = 0
+            updated_count = 0
+            skipped_count = 0
+            pending_review_count = 0
+            processed_emails = []
+
+            for msg in emails_data:
+                msg_id = msg.get('id', '')
+                thread_id = msg.get('thread_id') or msg.get('threadId', '')
+                sender_raw = msg.get('from', '')
+                sender_name, sender_email = parseaddr(sender_raw)
+                subject = msg.get('subject', '')
+                body_text = msg.get('body', '')
+                snippet = msg.get('snippet', '')
+                raw_date = msg.get('date', '')
+                parsed_date = EmailJobParser.parse_datetime(raw_date) if raw_date else timezone.now()
+
+                # 1. Stage raw message in EmailMessage table
+                email_msg, _ = EmailMessage.objects.get_or_create(
+                    user=user,
+                    gmail_message_id=msg_id,
+                    defaults={
+                        'gmail_thread_id': thread_id,
+                        'sender_name': sender_name,
+                        'sender_email': sender_email,
+                        'subject': subject,
+                        'received_at': parsed_date,
+                        'body_text': body_text,
+                        'snippet': snippet,
+                        'processing_status': EmailProcessingStatus.PROCESSING
+                    }
+                )
+
+                # 2. Extract structured job attributes
+                extracted = JobExtractor.extract_from_message(email_msg)
+                if not extracted:
+                    email_msg.is_job_related = False
+                    email_msg.processing_status = EmailProcessingStatus.IGNORED
+                    email_msg.processed_at = timezone.now()
+                    email_msg.save()
+                    skipped_count += 1
+                    continue
+
+                email_msg.is_job_related = True
+                email_msg.extracted_company_name = extracted.get('company_name', 'Unknown Company')
+                email_msg.extracted_job_title = extracted.get('job_title', 'Software Engineer')
+                email_msg.extracted_status = extracted.get('status', 'Applied')
+                email_msg.extracted_platform = extracted.get('platform', 'Other')
+                email_msg.extracted_recruiter_name = extracted.get('recruiter_name', '')
+                email_msg.extracted_recruiter_email = extracted.get('recruiter_email', sender_email)
+                email_msg.confidence_score = extracted.get('confidence', 0.95)
+
+                if auto_approve:
+                    # 3. Application deduplication and status mapping
+                    app_record, is_created = ApplicationService.process_extracted_job_email(user, email_msg, extracted)
+
+                    email_msg.processing_status = EmailProcessingStatus.PROCESSED
+                    email_msg.processed_at = timezone.now()
+                    email_msg.save()
+
+                    if is_created:
+                        created_count += 1
+                    else:
+                        updated_count += 1
+
+                    processed_emails.append({
+                        'id': msg_id,
+                        'company_name': app_record.company_name,
+                        'job_title': app_record.job_title,
+                        'status': app_record.status,
+                        'action': 'created' if is_created else 'updated'
+                    })
+                else:
+                    email_msg.processing_status = EmailProcessingStatus.PENDING_REVIEW
+                    email_msg.save()
+                    pending_review_count += 1
+
+                    processed_emails.append({
+                        'id': msg_id,
+                        'company_name': email_msg.extracted_company_name,
+                        'job_title': email_msg.extracted_job_title,
+                        'status': email_msg.extracted_status,
+                        'action': 'pending_review'
+                    })
+
+            return {
+                'scanned_emails_count': len(emails_data),
+                'staged_emails_count': EmailMessage.objects.filter(user=user).count(),
+                'created_count': created_count,
+                'updated_count': updated_count,
+                'pending_review_count': pending_review_count,
+                'skipped_count': skipped_count,
+                'processed_applications': processed_emails
+            }
+        finally:
+            self.credential.sync_status = 'IDLE'
+            self.credential.last_synced_at = timezone.now()
+            self.credential.save()

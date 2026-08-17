@@ -82,6 +82,8 @@ class GmailConnection(models.Model):
     last_history_id = models.CharField(max_length=100, blank=True, default='')
     watch_expiration = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    sync_status = models.CharField(max_length=50, default='IDLE')
+    sync_started_at = models.DateTimeField(null=True, blank=True)
     last_synced_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

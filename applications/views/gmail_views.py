@@ -87,15 +87,26 @@ class GmailStatusView(APIView):
     def get(self, request, *args, **kwargs):
         try:
             credential = GmailCredential.objects.get(user=request.user, is_active=True)
+
+            # Timeout safety: If sync has been IN_PROGRESS for over 3 minutes, reset status to IDLE
+            if credential.sync_status == 'IN_PROGRESS' and credential.sync_started_at:
+                from django.utils import timezone
+                if (timezone.now() - credential.sync_started_at).total_seconds() > 180:
+                    credential.sync_status = 'IDLE'
+                    credential.save()
+
             return Response({
                 'connected': True,
                 'email_address': credential.email_address,
+                'sync_status': credential.sync_status,
+                'sync_started_at': credential.sync_started_at,
                 'last_synced_at': credential.last_synced_at,
                 'created_at': credential.created_at
             }, status=status.HTTP_200_OK)
         except GmailCredential.DoesNotExist:
             return Response({
                 'connected': False,
+                'sync_status': 'IDLE',
                 'message': 'Gmail account is not connected.'
             }, status=status.HTTP_200_OK)
 
@@ -116,6 +127,15 @@ class GmailSyncView(APIView):
                 access_token='mock_access_token',
                 email_address=request.user.email or 'user@example.com'
             )
+
+        if credential.sync_status == 'IN_PROGRESS' and mock_emails is None:
+            from django.utils import timezone
+            if credential.sync_started_at and (timezone.now() - credential.sync_started_at).total_seconds() <= 180:
+                return Response({
+                    'message': 'A Gmail sync task is currently running in the background. Please wait for it to finish before starting a new one.',
+                    'status': 'IN_PROGRESS',
+                    'error': 'Sync task is already running in the background.'
+                }, status=status.HTTP_400_BAD_REQUEST)
 
         # Synchronous mode for testing/mock emails
         if mock_emails is not None:
