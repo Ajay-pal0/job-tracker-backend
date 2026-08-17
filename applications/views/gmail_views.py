@@ -129,9 +129,21 @@ class GmailSyncView(APIView):
         # Offload user Gmail sync to background thread in sync_service
         trigger_background_user_sync(credential.id)
 
+        from applications.models import EmailMessage, EmailProcessingStatus
+        pending_count = EmailMessage.objects.filter(
+            user=request.user,
+            processing_status=EmailProcessingStatus.PENDING_REVIEW
+        ).count()
+
         return Response({
             'message': 'Gmail sync process started in the background. New job emails will appear in your review queue shortly.',
-            'status': 'STARTED'
+            'status': 'STARTED',
+            'details': {
+                'scanned_emails_count': 0,
+                'created_count': 0,
+                'updated_count': 0,
+                'pending_review_count': pending_count
+            }
         }, status=status.HTTP_202_ACCEPTED)
 
 
