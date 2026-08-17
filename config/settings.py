@@ -198,4 +198,7 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
+# Cron API Secret Key
+CRON_SECRET = os.getenv('CRON_SECRET', 'default-jobtracker-cron-secret-123')
+
 
