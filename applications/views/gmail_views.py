@@ -121,8 +121,18 @@ class GmailSyncView(APIView):
         if mock_emails is not None:
             service = GmailService(credential)
             sync_results = service.sync_user_applications(emails_data=mock_emails)
+            sync_results.setdefault('messages', sync_results.get('processed_applications', []))
+            sync_results.setdefault('user_results', [])
+            sync_results.setdefault('processed_applications', [])
             return Response({
                 'message': f"Gmail sync complete. Created: {sync_results.get('created_count', 0)}, Scanned: {sync_results.get('scanned_emails_count', 0)}.",
+                'scanned_emails_count': sync_results.get('scanned_emails_count', 0),
+                'created_count': sync_results.get('created_count', 0),
+                'updated_count': sync_results.get('updated_count', 0),
+                'pending_review_count': sync_results.get('pending_review_count', 0),
+                'messages': sync_results.get('messages', []),
+                'user_results': [],
+                'processed_applications': sync_results.get('processed_applications', []),
                 'details': sync_results
             }, status=status.HTTP_200_OK)
 
@@ -135,15 +145,29 @@ class GmailSyncView(APIView):
             processing_status=EmailProcessingStatus.PENDING_REVIEW
         ).count()
 
+        details_payload = {
+            'scanned_emails_count': 0,
+            'staged_emails_count': pending_count,
+            'created_count': 0,
+            'updated_count': 0,
+            'pending_review_count': pending_count,
+            'skipped_count': 0,
+            'messages': [],
+            'user_results': [],
+            'processed_applications': []
+        }
+
         return Response({
             'message': 'Gmail sync process started in the background. New job emails will appear in your review queue shortly.',
             'status': 'STARTED',
-            'details': {
-                'scanned_emails_count': 0,
-                'created_count': 0,
-                'updated_count': 0,
-                'pending_review_count': pending_count
-            }
+            'scanned_emails_count': 0,
+            'created_count': 0,
+            'updated_count': 0,
+            'pending_review_count': pending_count,
+            'messages': [],
+            'user_results': [],
+            'processed_applications': [],
+            'details': details_payload
         }, status=status.HTTP_202_ACCEPTED)
 
 
