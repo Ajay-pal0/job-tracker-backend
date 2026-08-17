@@ -15,6 +15,7 @@ from .models import Application, ApplicationStatus, ApplicationPlatform, GmailCo
 from .serializers import ApplicationSerializer, EmailMessageSerializer, ApplicationEventSerializer
 from .services.gmail_service import GmailService
 from .services.application_service import ApplicationService
+from .services.sync_service import sync_all_gmail_applications, trigger_background_user_sync
 
 class ApplicationViewSet(viewsets.ModelViewSet):
     serializer_class = ApplicationSerializer
@@ -408,10 +409,6 @@ class GmailStatusView(APIView):
             }, status=status.HTTP_200_OK)
 
 
-from .services.sync_service import sync_all_gmail_applications
-
-import threading
-
 class GmailSyncView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -438,23 +435,8 @@ class GmailSyncView(APIView):
                 'details': sync_results
             }, status=status.HTTP_200_OK)
 
-        # Asynchronous background thread execution for real user sync requests
-        def run_sync_task(credential_id):
-            try:
-                from django.db import connection
-                connection.close()  # Refresh database connection in thread
-                cred = GmailCredential.objects.get(id=credential_id)
-                service = GmailService(cred)
-                service.sync_user_applications()
-            except Exception as e:
-                print(f"Background Gmail sync error for credential {credential_id}: {e}")
-
-        sync_thread = threading.Thread(
-            target=run_sync_task,
-            args=(credential.id,),
-            daemon=True
-        )
-        sync_thread.start()
+        # Offload user Gmail sync to background thread in sync_service
+        trigger_background_user_sync(credential.id)
 
         return Response({
             'message': 'Gmail sync process started in the background. New job emails will appear in your review queue shortly.',

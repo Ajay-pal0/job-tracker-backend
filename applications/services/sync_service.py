@@ -1,10 +1,29 @@
 import logging
+import threading
 from django.core.cache import cache
-from applications.models import GmailConnection
+from django.db import connection
+from applications.models import GmailConnection, GmailCredential
 from applications.services.gmail_service import GmailService
 
 logger = logging.getLogger(__name__)
 LOCK_EXPIRE = 60 * 10  # 10 minutes lock timeout
+
+def trigger_background_user_sync(credential_id: int):
+    """
+    Spawns a background thread to sync Gmail for a specific user credential asynchronously.
+    """
+    def _background_worker():
+        try:
+            connection.close()  # Refresh DB connection in thread
+            cred = GmailCredential.objects.get(id=credential_id)
+            service = GmailService(cred)
+            service.sync_user_applications()
+        except Exception as e:
+            logger.error(f"Background Gmail sync error for credential {credential_id}: {e}")
+
+    thread = threading.Thread(target=_background_worker, daemon=True)
+    thread.start()
+
 
 def sync_all_gmail_applications(mock_emails=None) -> dict:
     """
@@ -29,14 +48,14 @@ def sync_all_gmail_applications(mock_emails=None) -> dict:
 
         logger.info(f"Starting batch Gmail sync for {total_connections} active user connections.")
 
-        for connection in active_connections:
-            user_info = f"User ID {connection.user_id} ({connection.email or connection.user.email})"
+        for conn in active_connections:
+            user_info = f"User ID {conn.user_id} ({conn.email or conn.user.email})"
             try:
-                service = GmailService(connection)
+                service = GmailService(conn)
                 sync_res = service.sync_user_applications(emails_data=mock_emails)
                 synced_count += 1
                 results.append({
-                    'user_id': connection.user_id,
+                    'user_id': conn.user_id,
                     'status': 'success',
                     'scanned': sync_res.get('scanned_emails_count', 0),
                     'pending_review': sync_res.get('pending_review_count', 0)
@@ -46,7 +65,7 @@ def sync_all_gmail_applications(mock_emails=None) -> dict:
                 failed_count += 1
                 logger.error(f"Failed to sync Gmail for {user_info}: {str(e)}")
                 results.append({
-                    'user_id': connection.user_id,
+                    'user_id': conn.user_id,
                     'status': 'failed',
                     'error': str(e)
                 })
