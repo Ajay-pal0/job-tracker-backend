@@ -410,6 +410,8 @@ class GmailStatusView(APIView):
 
 from .services.sync_service import sync_all_gmail_applications
 
+import threading
+
 class GmailSyncView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -427,13 +429,37 @@ class GmailSyncView(APIView):
                 email_address=request.user.email or 'user@example.com'
             )
 
-        service = GmailService(credential)
-        sync_results = service.sync_user_applications(emails_data=mock_emails)
+        # Synchronous mode for testing/mock emails
+        if mock_emails is not None:
+            service = GmailService(credential)
+            sync_results = service.sync_user_applications(emails_data=mock_emails)
+            return Response({
+                'message': f"Gmail sync complete. Created: {sync_results.get('created_count', 0)}, Scanned: {sync_results.get('scanned_emails_count', 0)}.",
+                'details': sync_results
+            }, status=status.HTTP_200_OK)
+
+        # Asynchronous background thread execution for real user sync requests
+        def run_sync_task(credential_id):
+            try:
+                from django.db import connection
+                connection.close()  # Refresh database connection in thread
+                cred = GmailCredential.objects.get(id=credential_id)
+                service = GmailService(cred)
+                service.sync_user_applications()
+            except Exception as e:
+                print(f"Background Gmail sync error for credential {credential_id}: {e}")
+
+        sync_thread = threading.Thread(
+            target=run_sync_task,
+            args=(credential.id,),
+            daemon=True
+        )
+        sync_thread.start()
 
         return Response({
-            'message': f"Gmail sync complete. Created: {sync_results['created_count']}, Updated: {sync_results['updated_count']}, Scanned: {sync_results['scanned_emails_count']}.",
-            'details': sync_results
-        }, status=status.HTTP_200_OK)
+            'message': 'Gmail sync process started in the background. New job emails will appear in your review queue shortly.',
+            'status': 'STARTED'
+        }, status=status.HTTP_202_ACCEPTED)
 
 
 class GmailInternalCronSyncView(APIView):
