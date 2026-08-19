@@ -244,6 +244,8 @@ class GmailService:
                 email_msg.extracted_recruiter_name = extracted.get('recruiter_name', '')
                 email_msg.extracted_recruiter_email = extracted.get('recruiter_email', sender_email)
                 email_msg.confidence_score = extracted.get('confidence', 0.95)
+                email_msg.ai_reasoning = extracted.get('ai_reasoning', '')
+                email_msg.extraction_source = extracted.get('extraction_source', 'REGEX_PARSER')
 
                 if auto_approve:
                     # 3. Application deduplication and status mapping

@@ -122,6 +122,8 @@ class EmailMessage(models.Model):
     extracted_recruiter_name = models.CharField(max_length=255, blank=True, default='')
     extracted_recruiter_email = models.EmailField(blank=True, default='')
     confidence_score = models.FloatField(default=0.0)
+    ai_reasoning = models.TextField(blank=True, default='')
+    extraction_source = models.CharField(max_length=50, default='REGEX_PARSER')
     processing_status = models.CharField(
         max_length=50,
         choices=EmailProcessingStatus.choices,

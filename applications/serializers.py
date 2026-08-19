@@ -19,7 +19,7 @@ class EmailMessageSerializer(serializers.ModelSerializer):
             'sender_email', 'subject', 'received_at', 'body_text', 'snippet',
             'is_job_related', 'extracted_company_name', 'extracted_job_title',
             'extracted_status', 'extracted_platform', 'extracted_recruiter_name',
-            'extracted_recruiter_email', 'confidence_score',
+            'extracted_recruiter_email', 'confidence_score', 'ai_reasoning', 'extraction_source',
             'processing_status', 'processed_at', 'created_at',
             'has_linked_application', 'gmail_url'
         ]
