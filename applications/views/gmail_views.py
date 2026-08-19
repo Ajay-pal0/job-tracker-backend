@@ -156,6 +156,12 @@ class GmailSyncView(APIView):
                 'details': sync_results
             }, status=status.HTTP_200_OK)
 
+        # Mark sync status as IN_PROGRESS immediately on main thread
+        from django.utils import timezone
+        credential.sync_status = 'IN_PROGRESS'
+        credential.sync_started_at = timezone.now()
+        credential.save()
+
         # Offload user Gmail sync to background thread in sync_service
         trigger_background_user_sync(credential.id)
 
