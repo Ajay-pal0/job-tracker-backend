@@ -1,17 +1,28 @@
 # Job Application Tracker - Django REST Backend
 
-Standalone Django REST Framework API server for the Job Application Tracker featuring automated Gmail syncing, Celery background tasks, Celery Beat 24-hour periodic scheduling, PostgreSQL database support, JWT authentication, Excel/CSV import/export, and Docker containerization.
+Standalone Django REST Framework API server for the Job Application Tracker featuring automated Gmail OAuth2 syncing, LLM-powered AI job classification (Google Gemini & OpenAI APIs), Celery background task processing, PostgreSQL database support, JWT authentication, Excel/CSV import/export, and Docker containerization.
+
+---
+
+## ⚡ Key Features
+
+- 🤖 **LLM AI Job Classification**: Integrates `AIJobClassifierService` supporting **Google Gemini API** & **OpenAI API** to intelligently analyze incoming Gmail messages, extract application status (`Applied`, `Interview Scheduled`, `Offer`, `Rejected`), company, role, recruiter info, and provide human-readable AI reasoning.
+- ⚙️ **Resilient Fallback Parser**: Combines LLM classification with automatic fallback to rule-based regex parsing for high extraction reliability.
+- 📧 **Automated Gmail OAuth2 Sync**: Integrates with Google APIs for offline sync with access token auto-refresh and cache locking.
+- ⏱️ **Celery Background Sync & GitHub Actions**: Offloads Gmail ingestion tasks to Celery workers with Redis. Supports automated periodic cron synchronization via GitHub Actions or Celery Beat.
+- 📊 **Analytics & Summary Endpoints**: Provides application conversion rates, platform breakdown, and monthly application trends.
+- 📥 **Excel/CSV Data Import & Export**: Bulk import existing application spreadsheets and export tracking data directly to Excel.
 
 ---
 
 ## Tech Stack
 - **Framework**: Django 5.0+, Django REST Framework
-- **Auth**: JWT Authentication (`djangorestframework-simplejwt`)
+- **AI / LLM Integration**: Google Gemini API (`google-generativeai`), OpenAI API (`openai`)
+- **Auth**: JWT Authentication (`djangorestframework-simplejwt`), Google OAuth2 Client
 - **Database**: PostgreSQL (Production/Docker) with automatic SQLite fallback (Local Dev)
-- **Task Queue & Scheduler**: Celery, Redis, Celery Beat (24-hour periodic sync)
-- **Third-Party Integration**: Google Gmail API (OAuth2, Email parsing & LLM/NLP job extraction)
+- **Task Queue & Scheduler**: Celery, Redis, GitHub Actions Cron Sync
 - **Data Processing**: pandas, openpyxl
-- **Server**: Gunicorn, Uvicorn / WSGI
+- **Server**: Gunicorn / Uvicorn
 
 ---
 
@@ -46,8 +57,8 @@ python manage.py migrate
 python manage.py runserver 8000
 ```
 
-### Celery-Free Background Sync Architecture (Recommended)
-You can run periodic Gmail application synchronization without Redis or Celery using the built-in management command or GitHub Actions:
+### Background Gmail Sync Execution
+Run periodic Gmail application synchronization without Redis or Celery using the built-in management command:
 
 ```bash
 # Execute batch Gmail sync across all active users with cache locking
@@ -55,11 +66,11 @@ python manage.py sync_gmail
 ```
 
 #### GitHub Actions Workflow (.github/workflows/scheduled-gmail-sync.yml)
-Runs automatically on a configurable schedule (every 15 mins / hourly) or via manual trigger (`workflow_dispatch`). Can trigger the `POST /api/applications/gmail/cron-sync/` endpoint or execute `python manage.py sync_gmail` directly.
+Runs automatically on a configurable schedule or manual trigger (`workflow_dispatch`). Triggers the secured background cron sync endpoint (`POST /api/applications/gmail/cron-sync/`) using `CRON_SECRET`.
 
 ---
 
-### Alternative: Celery Worker & Celery Beat (Optional)
+### Option 2: Celery Worker & Celery Beat (Optional)
 If running Redis & Celery in production:
 
 ```bash
@@ -69,11 +80,11 @@ redis-server
 # Run Celery Worker (In terminal 1)
 celery -A config worker --loglevel=info
 
-# Run Celery Beat Scheduler (In terminal 2 - handles 24hr background sync)
+# Run Celery Beat Scheduler (In terminal 2 - handles periodic sync)
 celery -A config beat --loglevel=info
 ```
 
-### Option 2: Docker Compose (Django + PostgreSQL + Redis + Celery + Celery Beat)
+### Option 3: Docker Compose (Django + PostgreSQL + Redis + Celery)
 ```bash
 docker-compose up --build
 ```
@@ -82,7 +93,7 @@ This automatically starts:
 - Redis container on port `6379`
 - Django Backend container on port `8000`
 - Celery Worker container
-- Celery Beat container (24-hour periodic sync scheduler)
+- Celery Beat container
 
 ---
 
@@ -102,7 +113,10 @@ CELERY_BROKER_URL=redis://redis:6379/0
 CELERY_RESULT_BACKEND=redis://redis:6379/0
 GOOGLE_CLIENT_ID=your-google-oauth-client-id
 GOOGLE_CLIENT_SECRET=your-google-oauth-client-secret
-CORS_ALLOWED_ORIGINS=https://yourusername.github.io,http://localhost:5173
+GEMINI_API_KEY=your-gemini-api-key
+OPENAI_API_KEY=your-openai-api-key
+CRON_SECRET=your-cron-secret-token
+CORS_ALLOWED_ORIGINS=https://jobtracker-7aq.pages.dev,http://localhost:5173
 ```
 
 ---
@@ -120,20 +134,20 @@ CORS_ALLOWED_ORIGINS=https://yourusername.github.io,http://localhost:5173
 - `GET /api/applications/` - List applications (supports `search`, `status`, `platform`, `ordering`)
 - `POST /api/applications/` - Create application record
 - `PUT/PATCH /api/applications/{id}/` - Update record
-- `DELETE /api/applications/{id}/` - Delete record (unlocks/resets staged email status if linked)
+- `DELETE /api/applications/{id}/` - Delete record
 - `POST /api/applications/import/` - Import CSV / Excel file
 - `GET /api/applications/export/` - Download Excel spreadsheet
 - `GET /api/analytics/` - Analytics breakdown metrics
 
-### Gmail Integration & Async Sync
+### Gmail Integration & AI Sync
 - `GET /api/applications/gmail/auth-url/` - Get Google OAuth authorization URL
 - `POST /api/applications/gmail/connect/` - Exchange Google OAuth code / store credentials
 - `GET /api/applications/gmail/status/` - Connection status & last synced timestamp
-- `POST /api/applications/gmail/sync/` - Offload Gmail sync task to Celery worker queue (returns `task_id`)
+- `POST /api/applications/gmail/sync/` - Offload Gmail sync task to Celery background worker
+- `POST /api/applications/gmail/cron-sync/` - Internal API endpoint for automated cron synchronization (`CRON_SECRET`)
 - `POST /api/applications/gmail/disconnect/` - Disconnect Gmail integration
-- `GET /api/applications/gmail/messages/` - Review staged emails queue (filter by `status`, `is_job_related`, `search`)
+- `GET /api/applications/gmail/messages/` - Review staged emails queue (returns AI reasoning & extraction source)
 - `POST /api/applications/gmail/emails/{id}/approve/` - Approve staged email into Application record
 - `POST /api/applications/gmail/emails/bulk-approve/` - Bulk approve staged emails
 - `POST /api/applications/gmail/emails/{id}/ignore/` - Mark email as ignored
 - `POST /api/applications/gmail/emails/bulk-ignore/` - Bulk mark emails as ignored
-
